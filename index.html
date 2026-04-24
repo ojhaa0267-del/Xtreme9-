@@ -1,0 +1,1438 @@
+import { useState, useEffect, useRef, useCallback } from "react";
+
+/* ═══════════════════════════════════════════════════════════════
+   ASSET MAP — swap filenames here to update all visuals at once
+   ═══════════════════════════════════════════════════════════════ */
+const A = {
+  heroVideo:   "hero-video.mp4",
+  gymVideo:    "gym-video.mp4",
+  interior1:   "interior1.png",   // gym floor hero red/black
+  interior2:   "interior2.png",   // cardio zone stairclimber
+  interior3:   "interior3.png",   // wide gym floor red columns
+  interior4:   "interior4.png",   // equipment zone red neon
+  interior5:   "interior5.png",   // ONE MORE REP pillar shot
+  reception:   "reception.png",   // reception / lobby
+  trainer1:    "trainer1.png",    // BW posing Fitline bg
+  trainer2:    "trainer2.png",    // athlete double bicep
+  training1:   "training1.png",   // BW bicep curl action
+  transform1:  "transform1.png",  // before/after
+  champion:    "champion.png",    // champion with trophies
+};
+
+/* ═══════════════════════════════════════════════
+   HOOKS
+   ═══════════════════════════════════════════════ */
+function useInView(threshold = 0.15) {
+  const ref = useRef(null);
+  const [inView, setInView] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(
+      ([e]) => { if (e.isIntersecting) { setInView(true); obs.disconnect(); } },
+      { threshold }
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [threshold]);
+  return [ref, inView];
+}
+
+function useCounter(target, inView, duration = 1800) {
+  const [val, setVal] = useState(0);
+  useEffect(() => {
+    if (!inView) return;
+    let start = null;
+    const step = (ts) => {
+      if (!start) start = ts;
+      const p = Math.min((ts - start) / duration, 1);
+      const ease = 1 - Math.pow(1 - p, 3);
+      setVal(Math.floor(ease * target));
+      if (p < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  }, [inView, target, duration]);
+  return val;
+}
+
+/* ═══════════════════════════════════════════════
+   REUSABLE PRIMITIVES
+   ═══════════════════════════════════════════════ */
+function FadeUp({ children, delay = 0, className = "" }) {
+  const [ref, inView] = useInView();
+  return (
+    <div
+      ref={ref}
+      className={className}
+      style={{
+        opacity: inView ? 1 : 0,
+        transform: inView ? "translateY(0)" : "translateY(40px)",
+        transition: `opacity 0.75s ease ${delay}s, transform 0.75s ease ${delay}s`,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function RedLine({ className = "" }) {
+  return (
+    <div className={`flex items-center gap-3 ${className}`}>
+      <div style={{ width: 48, height: 3, background: "var(--red)", boxShadow: "0 0 10px var(--red)" }} />
+      <div style={{ width: 12, height: 3, background: "var(--red)", opacity: 0.5 }} />
+    </div>
+  );
+}
+
+function GlowBtn({ children, variant = "red", href = "#", className = "" }) {
+  const styles = {
+    red: { bg: "var(--red)", shadow: "0 0 24px rgba(220,38,38,0.5)", hover: "rgba(200,20,20,1)" },
+    outline: { bg: "transparent", shadow: "0 0 0px transparent", border: "1.5px solid rgba(255,255,255,0.25)" },
+    ghost: { bg: "rgba(255,255,255,0.05)", shadow: "none" },
+  };
+  const s = styles[variant];
+  const [hov, setHov] = useState(false);
+  return (
+    <a
+      href={href}
+      className={`inline-flex items-center justify-center px-7 py-3 rounded-sm font-bold tracking-widest uppercase text-sm text-white cursor-pointer ${className}`}
+      style={{
+        background: hov && variant === "red" ? s.hover : s.bg,
+        boxShadow: hov ? s.shadow : "none",
+        border: s.border || "none",
+        transform: hov ? "translateY(-2px)" : "translateY(0)",
+        transition: "all 0.25s ease",
+        letterSpacing: "0.12em",
+      }}
+      onMouseEnter={() => setHov(true)}
+      onMouseLeave={() => setHov(false)}
+    >
+      {children}
+    </a>
+  );
+}
+
+function StarRating({ count = 5, filled = 5 }) {
+  return (
+    <div className="flex gap-0.5">
+      {Array.from({ length: count }).map((_, i) => (
+        <svg key={i} width="14" height="14" viewBox="0 0 24 24" fill={i < filled ? "var(--red)" : "rgba(255,255,255,0.15)"}>
+          <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+        </svg>
+      ))}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════
+   NAV
+   ═══════════════════════════════════════════════ */
+function Nav() {
+  const [scrolled, setScrolled] = useState(false);
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    const h = () => setScrolled(window.scrollY > 60);
+    window.addEventListener("scroll", h);
+    return () => window.removeEventListener("scroll", h);
+  }, []);
+  const links = ["About", "Programs", "Branches", "Pricing", "Gallery", "Contact"];
+  return (
+    <nav
+      style={{
+        position: "fixed", top: 0, left: 0, right: 0, zIndex: 100,
+        background: scrolled ? "rgba(5,5,5,0.96)" : "transparent",
+        backdropFilter: scrolled ? "blur(12px)" : "none",
+        borderBottom: scrolled ? "1px solid rgba(220,38,38,0.15)" : "none",
+        transition: "all 0.4s ease",
+        padding: "0 5vw",
+      }}
+    >
+      <div style={{ maxWidth: 1280, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", height: 72 }}>
+        {/* Logo */}
+        <div style={{ display: "flex", flexDirection: "column", lineHeight: 1 }}>
+          <span style={{ fontSize: 22, fontWeight: 900, color: "white", letterSpacing: "0.06em", fontFamily: "var(--font-head)" }}>
+            XTREME<span style={{ color: "var(--red)" }}>9</span>
+          </span>
+          <span style={{ fontSize: 9, color: "rgba(255,255,255,0.45)", letterSpacing: "0.2em", fontFamily: "var(--font-body)" }}>HEALTH & FITNESS</span>
+        </div>
+        {/* Desktop links */}
+        <div className="hidden md:flex items-center gap-8">
+          {links.map((l) => (
+            <a key={l} href={`#${l.toLowerCase()}`}
+              style={{ color: "rgba(255,255,255,0.65)", fontSize: 12, letterSpacing: "0.15em", fontWeight: 600, textDecoration: "none", transition: "color 0.2s" }}
+              onMouseEnter={e => e.target.style.color = "var(--red)"}
+              onMouseLeave={e => e.target.style.color = "rgba(255,255,255,0.65)"}
+            >{l}</a>
+          ))}
+          <GlowBtn href="#contact" variant="red" className="ml-2">Join Now</GlowBtn>
+        </div>
+        {/* Burger */}
+        <button className="md:hidden flex flex-col gap-1.5 p-2" onClick={() => setOpen(!open)}>
+          {[0,1,2].map(i => (
+            <span key={i} style={{ display: "block", width: 24, height: 2, background: "white", transition: "all 0.3s",
+              transform: open && i === 0 ? "rotate(45deg) translate(5px,5px)" : open && i === 2 ? "rotate(-45deg) translate(5px,-5px)" : "none",
+              opacity: open && i === 1 ? 0 : 1 }} />
+          ))}
+        </button>
+      </div>
+      {/* Mobile menu */}
+      {open && (
+        <div style={{ background: "rgba(5,5,5,0.98)", borderTop: "1px solid rgba(220,38,38,0.2)", padding: "1.5rem 5vw 2rem" }}>
+          {links.map((l) => (
+            <a key={l} href={`#${l.toLowerCase()}`} onClick={() => setOpen(false)}
+              style={{ display: "block", color: "rgba(255,255,255,0.75)", padding: "0.75rem 0", fontSize: 13, letterSpacing: "0.15em", fontWeight: 600, textDecoration: "none", borderBottom: "1px solid rgba(255,255,255,0.06)" }}
+            >{l}</a>
+          ))}
+          <GlowBtn href="#contact" variant="red" className="mt-4 w-full">Join Now</GlowBtn>
+        </div>
+      )}
+    </nav>
+  );
+}
+
+/* ═══════════════════════════════════════════════
+   HERO
+   ═══════════════════════════════════════════════ */
+function Hero() {
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => { setTimeout(() => setLoaded(true), 100); }, []);
+
+  const StatPill = ({ num, label, sub }) => (
+    <div style={{
+      background: "rgba(0,0,0,0.65)", backdropFilter: "blur(16px)",
+      border: "1px solid rgba(220,38,38,0.3)", borderRadius: 8,
+      padding: "14px 22px", minWidth: 110, textAlign: "center",
+    }}>
+      <div style={{ fontSize: 28, fontWeight: 900, color: "white", fontFamily: "var(--font-head)", lineHeight: 1 }}>
+        {num}<span style={{ color: "var(--red)" }}>+</span>
+      </div>
+      <div style={{ fontSize: 10, color: "rgba(255,255,255,0.5)", letterSpacing: "0.15em", marginTop: 4 }}>{label}</div>
+      {sub && <div style={{ fontSize: 9, color: "var(--red)", letterSpacing: "0.1em", marginTop: 2 }}>{sub}</div>}
+    </div>
+  );
+
+  return (
+    <section id="hero" style={{ position: "relative", height: "100svh", minHeight: 600, overflow: "hidden", display: "flex", alignItems: "center" }}>
+      {/* VIDEO BG */}
+      <video
+        autoPlay muted loop playsInline
+        style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", zIndex: 0 }}
+        onLoadedData={() => setLoaded(true)}
+      >
+        <source src={A.heroVideo} type="video/mp4" />
+        {/* Fallback image */}
+        <img src={A.interior1} alt="Xtreme9 Gym" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+      </video>
+
+      {/* Gradient overlays — cinematic treatment */}
+      <div style={{ position: "absolute", inset: 0, zIndex: 1,
+        background: "linear-gradient(105deg, rgba(0,0,0,0.88) 0%, rgba(0,0,0,0.55) 50%, rgba(0,0,0,0.3) 100%)" }} />
+      <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: "35%", zIndex: 2,
+        background: "linear-gradient(to top, #050505 0%, transparent 100%)" }} />
+      {/* Red glow line at bottom */}
+      <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 2, zIndex: 3,
+        background: "linear-gradient(90deg, transparent 0%, var(--red) 30%, var(--red) 70%, transparent 100%)",
+        boxShadow: "0 0 40px 4px rgba(220,38,38,0.4)" }} />
+
+      {/* Content */}
+      <div style={{ position: "relative", zIndex: 10, maxWidth: 1280, margin: "0 auto", padding: "0 5vw", width: "100%", paddingTop: 80 }}>
+        <div style={{ maxWidth: 720 }}>
+          {/* Eyebrow */}
+          <div style={{
+            opacity: loaded ? 1 : 0, transform: loaded ? "none" : "translateY(20px)",
+            transition: "all 0.8s ease 0.2s",
+            display: "inline-flex", alignItems: "center", gap: 10,
+            background: "rgba(220,38,38,0.12)", border: "1px solid rgba(220,38,38,0.3)",
+            borderRadius: 4, padding: "5px 14px", marginBottom: 24,
+          }}>
+            <div style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--red)", boxShadow: "0 0 8px var(--red)" }} />
+            <span style={{ fontSize: 10, color: "var(--red)", letterSpacing: "0.25em", fontWeight: 700 }}>EST. 2009 · 17 YEARS OF EXCELLENCE</span>
+          </div>
+
+          {/* Headline */}
+          <h1 style={{
+            fontFamily: "var(--font-head)", fontSize: "clamp(3rem, 7vw, 6rem)",
+            fontWeight: 900, color: "white", lineHeight: 0.95, letterSpacing: "-0.02em",
+            marginBottom: 24,
+            opacity: loaded ? 1 : 0, transform: loaded ? "none" : "translateY(30px)",
+            transition: "all 0.9s ease 0.4s",
+          }}>
+            TRAIN LIKE<br />
+            A <span style={{ color: "var(--red)", textShadow: "0 0 40px rgba(220,38,38,0.5)" }}>FIGHTER.</span><br />
+            <span style={{ WebkitTextStroke: "1.5px rgba(255,255,255,0.4)", color: "transparent" }}>TRANSFORM</span><br />
+            LIKE A CHAMPION.
+          </h1>
+
+          {/* Subhead */}
+          <p style={{
+            color: "rgba(255,255,255,0.6)", fontSize: "clamp(14px, 1.5vw, 17px)", lineHeight: 1.7,
+            maxWidth: 520, marginBottom: 40,
+            opacity: loaded ? 1 : 0, transform: loaded ? "none" : "translateY(20px)",
+            transition: "all 0.8s ease 0.6s",
+          }}>
+            India's premier combat sports & luxury fitness destination. Three elite branches. 
+            World-class coaching. Unmatched results.
+          </p>
+
+          {/* CTAs */}
+          <div style={{
+            display: "flex", flexWrap: "wrap", gap: 14, marginBottom: 56,
+            opacity: loaded ? 1 : 0, transform: loaded ? "none" : "translateY(20px)",
+            transition: "all 0.8s ease 0.75s",
+          }}>
+            <GlowBtn href="#contact" variant="red">Join Now</GlowBtn>
+            <GlowBtn href="#programs" variant="outline">Explore Programs</GlowBtn>
+            <GlowBtn href="#contact" variant="ghost">Book a Trial →</GlowBtn>
+          </div>
+
+          {/* Stats */}
+          <div style={{
+            display: "flex", flexWrap: "wrap", gap: 12,
+            opacity: loaded ? 1 : 0, transform: loaded ? "none" : "translateY(20px)",
+            transition: "all 0.8s ease 0.9s",
+          }}>
+            <StatPill num="3" label="ELITE BRANCHES" />
+            <StatPill num="17" label="YEARS STRONG" />
+            <StatPill num="860" label="5-STAR REVIEWS" sub="ACROSS ALL BRANCHES" />
+            <StatPill num="13" label="PROGRAMS" />
+          </div>
+        </div>
+      </div>
+
+      {/* Scroll indicator */}
+      <div style={{ position: "absolute", bottom: 36, left: "50%", transform: "translateX(-50%)", zIndex: 10,
+        display: "flex", flexDirection: "column", alignItems: "center", gap: 8,
+        opacity: loaded ? 1 : 0, transition: "opacity 1s ease 1.2s" }}>
+        <span style={{ fontSize: 9, color: "rgba(255,255,255,0.35)", letterSpacing: "0.2em" }}>SCROLL</span>
+        <div style={{ width: 1, height: 40, background: "linear-gradient(to bottom, var(--red), transparent)", animation: "pulse 2s ease infinite" }} />
+      </div>
+    </section>
+  );
+}
+
+/* ═══════════════════════════════════════════════
+   ABOUT
+   ═══════════════════════════════════════════════ */
+function About() {
+  const [ref, inView] = useInView();
+  const years = useCounter(17, inView);
+  const members = useCounter(5000, inView);
+  const branches = useCounter(3, inView);
+  const programs = useCounter(13, inView);
+
+  return (
+    <section id="about" style={{ background: "#050505", padding: "120px 5vw" }}>
+      <div style={{ maxWidth: 1280, margin: "0 auto" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "5vw", alignItems: "center" }}
+          className="grid-cols-1 md:grid-cols-2">
+
+          {/* Left: image stack */}
+          <FadeUp delay={0}>
+            <div style={{ position: "relative" }}>
+              <div style={{ borderRadius: 4, overflow: "hidden", position: "relative" }}>
+                <img src={A.interior1} alt="Xtreme9 Gym Interior"
+                  style={{ width: "100%", height: 460, objectFit: "cover", display: "block", filter: "brightness(0.85) contrast(1.1)" }} />
+                <div style={{ position: "absolute", inset: 0, background: "linear-gradient(135deg, rgba(220,38,38,0.15) 0%, transparent 60%)" }} />
+              </div>
+              {/* Floating badge */}
+              <div style={{
+                position: "absolute", bottom: -24, right: -24,
+                background: "var(--red)", borderRadius: 4, padding: "20px 24px",
+                boxShadow: "0 0 40px rgba(220,38,38,0.4)",
+              }}>
+                <div style={{ fontSize: 36, fontWeight: 900, color: "white", fontFamily: "var(--font-head)", lineHeight: 1 }}>4.9<span style={{ fontSize: 18 }}>★</span></div>
+                <div style={{ fontSize: 10, color: "rgba(255,255,255,0.8)", letterSpacing: "0.15em", marginTop: 4 }}>AVG RATING</div>
+              </div>
+              {/* Small inset image */}
+              <div style={{ position: "absolute", top: -20, left: -20, width: 140, height: 140, borderRadius: 4, overflow: "hidden",
+                border: "3px solid rgba(220,38,38,0.4)", boxShadow: "0 8px 32px rgba(0,0,0,0.6)" }}>
+                <img src={A.champion} alt="Champion" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              </div>
+            </div>
+          </FadeUp>
+
+          {/* Right: text */}
+          <div ref={ref}>
+            <FadeUp delay={0.1}>
+              <RedLine className="mb-5" />
+              <p style={{ fontSize: 11, color: "var(--red)", letterSpacing: "0.25em", fontWeight: 700, marginBottom: 12 }}>OUR STORY</p>
+              <h2 style={{ fontFamily: "var(--font-head)", fontSize: "clamp(2rem, 3.5vw, 3rem)", fontWeight: 900, color: "white", lineHeight: 1.05, marginBottom: 20 }}>
+                WHERE ELITE TRAINING<br />MEETS REAL RESULTS
+              </h2>
+              <p style={{ color: "rgba(255,255,255,0.55)", lineHeight: 1.8, fontSize: 15, marginBottom: 16 }}>
+                Since 2009, Xtreme9 has been redefining what a gym can be. We are not just a place to lift weights — 
+                we are a hub for transformation, combat excellence, and holistic fitness spanning three premier locations 
+                across India.
+              </p>
+              <p style={{ color: "rgba(255,255,255,0.55)", lineHeight: 1.8, fontSize: 15, marginBottom: 36 }}>
+                From the islands of Andaman to the heart of Mumbai, our coaches bring championship-level expertise 
+                to every session. Whether you are a complete beginner or a seasoned athlete, Xtreme9 meets you where 
+                you are — and pushes you beyond what you thought possible.
+              </p>
+
+              {/* Stats row */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 24, marginBottom: 36 }}>
+                {[
+                  { val: years, label: "Years in Business", suffix: "+" },
+                  { val: members, label: "Members Trained", suffix: "+" },
+                  { val: branches, label: "Elite Branches", suffix: "" },
+                  { val: programs, label: "Training Programs", suffix: "+" },
+                ].map(({ val, label, suffix }) => (
+                  <div key={label} style={{ borderLeft: "2px solid var(--red)", paddingLeft: 16 }}>
+                    <div style={{ fontSize: 36, fontWeight: 900, color: "white", fontFamily: "var(--font-head)", lineHeight: 1 }}>
+                      {val}{suffix}
+                    </div>
+                    <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", letterSpacing: "0.12em", marginTop: 4 }}>{label}</div>
+                  </div>
+                ))}
+              </div>
+              <GlowBtn href="#branches" variant="red">Explore Our Branches</GlowBtn>
+            </FadeUp>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ═══════════════════════════════════════════════
+   PROGRAMS
+   ═══════════════════════════════════════════════ */
+const PROGRAMS = [
+  { name: "Strength & Gym", icon: "🏋️", tag: "STRENGTH", desc: "Build raw power with top-notch Fitline equipment in a hygienic, premium environment. Expert guidance for all levels.", color: "#dc2626" },
+  { name: "CrossFit", icon: "⚡", tag: "HIIT", desc: "High-intensity functional movements that build endurance, strength, and explosive athleticism across all three branches.", color: "#ef4444" },
+  { name: "MMA Training", icon: "🥊", tag: "COMBAT", desc: "Mixed Martial Arts conditioning blending striking, grappling, and elite ring performance under championship coaches.", color: "#dc2626" },
+  { name: "Boxing", icon: "🥋", tag: "COMBAT · ₹1,500+", desc: "From basic footwork to advanced combination drills. Our boxing program builds discipline, reflexes, and total body power.", color: "#b91c1c" },
+  { name: "Kickboxing", icon: "🦵", tag: "COMBAT", desc: "Fitness kickboxing that torches calories while developing real striking skill, coordination, and mental toughness.", color: "#dc2626" },
+  { name: "Brazilian Jiu-Jitsu", icon: "🤼", tag: "GRAPPLING", desc: "The gentle art. Learn leverage, submissions, and ground control in structured classes for all belt levels.", color: "#7f1d1d" },
+  { name: "Karate & Judo", icon: "🎽", tag: "MARTIAL ARTS", desc: "Traditional disciplines with modern training methods. Build respect, focus, and proven self-defence skills.", color: "#991b1b" },
+  { name: "Functional Training", icon: "🔥", tag: "PERFORMANCE", desc: "Movement-based training that builds real-world strength, stability, and athletic performance for daily life and sport.", color: "#dc2626" },
+  { name: "Yoga & Power Yoga", icon: "🧘", tag: "MIND-BODY", desc: "From deep stretch to power flow — our yoga programs restore balance, build core strength, and sharpen mental clarity.", color: "#6b7280" },
+  { name: "Zumba", icon: "💃", tag: "DANCE FITNESS", desc: "High-energy Latin-inspired cardio that is so much fun you forget you are burning serious calories. Open to all levels.", color: "#dc2626" },
+  { name: "Weight Lifting", icon: "🏆", tag: "STRENGTH", desc: "Structured Olympic and powerlifting programs with experienced coaches who ensure perfect form and progressive overload.", color: "#b91c1c" },
+  { name: "Gymnastics", icon: "🤸", tag: "AGILITY", desc: "Build extraordinary body control, flexibility, and strength through structured gymnastics progressions for all ages.", color: "#374151" },
+];
+
+function ProgramCard({ prog, delay }) {
+  const [hov, setHov] = useState(false);
+  return (
+    <FadeUp delay={delay}>
+      <div
+        onMouseEnter={() => setHov(true)}
+        onMouseLeave={() => setHov(false)}
+        style={{
+          background: hov ? "rgba(220,38,38,0.08)" : "rgba(255,255,255,0.03)",
+          border: `1px solid ${hov ? "rgba(220,38,38,0.4)" : "rgba(255,255,255,0.07)"}`,
+          borderRadius: 6, padding: "28px 24px",
+          transform: hov ? "translateY(-6px)" : "none",
+          boxShadow: hov ? "0 20px 60px rgba(220,38,38,0.12)" : "none",
+          transition: "all 0.35s ease",
+          cursor: "pointer", position: "relative", overflow: "hidden",
+        }}
+      >
+        {hov && <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: "var(--red)", boxShadow: "0 0 12px var(--red)" }} />}
+        <div style={{ fontSize: 32, marginBottom: 12 }}>{prog.icon}</div>
+        <div style={{ fontSize: 9, color: "var(--red)", letterSpacing: "0.2em", fontWeight: 700, marginBottom: 8 }}>{prog.tag}</div>
+        <h3 style={{ fontFamily: "var(--font-head)", fontSize: 18, fontWeight: 800, color: "white", marginBottom: 10 }}>{prog.name}</h3>
+        <p style={{ fontSize: 13, color: "rgba(255,255,255,0.45)", lineHeight: 1.7 }}>{prog.desc}</p>
+        <div style={{ marginTop: 18, display: "flex", alignItems: "center", gap: 6, color: hov ? "var(--red)" : "rgba(255,255,255,0.25)", fontSize: 12, fontWeight: 700, transition: "color 0.3s" }}>
+          Learn More <span>→</span>
+        </div>
+      </div>
+    </FadeUp>
+  );
+}
+
+function Programs() {
+  return (
+    <section id="programs" style={{ background: "#080808", padding: "120px 5vw" }}>
+      <div style={{ maxWidth: 1280, margin: "0 auto" }}>
+        <FadeUp>
+          <div style={{ textAlign: "center", marginBottom: 64 }}>
+            <RedLine className="justify-center mb-5" />
+            <p style={{ fontSize: 11, color: "var(--red)", letterSpacing: "0.25em", fontWeight: 700, marginBottom: 12 }}>WORLD-CLASS TRAINING</p>
+            <h2 style={{ fontFamily: "var(--font-head)", fontSize: "clamp(2rem, 4vw, 3.5rem)", fontWeight: 900, color: "white", lineHeight: 1.05 }}>
+              13 PROGRAMS.<br /><span style={{ color: "var(--red)" }}>ONE DESTINATION.</span>
+            </h2>
+          </div>
+        </FadeUp>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(270px, 1fr))", gap: 20 }}>
+          {PROGRAMS.map((p, i) => <ProgramCard key={p.name} prog={p} delay={i * 0.04} />)}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ═══════════════════════════════════════════════
+   BRANCHES
+   ═══════════════════════════════════════════════ */
+const BRANCHES = [
+  {
+    name: "Port Blair", subtitle: "ANDAMAN & NICOBAR ISLANDS",
+    address: "3rd Floor, Housing Colony, Near Apollo Clinic, Garacharama, Port Blair – 744105",
+    hours: "Open until 10:30 PM", rating: 4.9, reviews: 245,
+    programs: ["Gym", "CrossFit", "Zumba", "Yoga", "Weight Lifting"],
+    amenities: ["Swimming Pool", "WiFi", "Sauna Body Care", "Weight Management"],
+    highlight: "Top-notch Fitline equipment in a pristine island environment with awesome ambiance and energising music.",
+    img: A.interior3, badge: "ISLAND ELITE",
+  },
+  {
+    name: "Thane", subtitle: "MIRA ROAD EAST, MAHARASHTRA",
+    address: "Plot No 119, Near RBK School, Kanakia Road, Beverly Park, Mira Road East, Thane – 401107",
+    hours: "Open until 10:00 PM", rating: 4.8, reviews: 483,
+    programs: ["MMA", "Boxing", "Kickboxing", "BJJ", "Karate", "Judo", "CrossFit"],
+    amenities: ["Locker Facility", "WiFi", "Drinking Water"],
+    highlight: "India's premier combat sports hub. Est. 2009. Strict yet fun coaching that breaks the monotony of a traditional gym.",
+    img: A.interior5, badge: "COMBAT HQ", featured: true,
+    note: "Boxing coaching from ₹1,500 | Feesback Partnership Available",
+  },
+  {
+    name: "Mumbai", subtitle: "GHATKOPAR WEST, MAHARASHTRA",
+    address: "RJ College, Opposite Ghatkopar Station, Ghatkopar West, Mumbai – 400086",
+    hours: "Open 24 Hours", rating: 4.9, reviews: 134,
+    programs: ["CrossFit", "MMA", "Kickboxing", "Power Yoga", "Boxing", "Gymnastics"],
+    amenities: ["Swimming Pool", "Wheelchair Access", "Accessible Parking"],
+    highlight: "Mumbai's 24/7 elite fitness experience focused on holistic mind-body development and constant growth.",
+    img: A.reception, badge: "24/7 OPEN",
+  },
+];
+
+function BranchCard({ branch, delay }) {
+  const [hov, setHov] = useState(false);
+  return (
+    <FadeUp delay={delay}>
+      <div
+        onMouseEnter={() => setHov(true)}
+        onMouseLeave={() => setHov(false)}
+        style={{
+          background: "#0d0d0d",
+          border: `1px solid ${branch.featured ? "rgba(220,38,38,0.5)" : hov ? "rgba(220,38,38,0.3)" : "rgba(255,255,255,0.07)"}`,
+          borderRadius: 8, overflow: "hidden",
+          transform: hov ? "translateY(-8px)" : "none",
+          boxShadow: hov ? "0 30px 80px rgba(0,0,0,0.5)" : branch.featured ? "0 0 40px rgba(220,38,38,0.1)" : "none",
+          transition: "all 0.4s ease",
+          position: "relative",
+        }}
+      >
+        {branch.featured && (
+          <div style={{ position: "absolute", top: 16, right: 16, zIndex: 10,
+            background: "var(--red)", padding: "4px 12px", borderRadius: 3, fontSize: 9, color: "white", letterSpacing: "0.15em", fontWeight: 800 }}>
+            MOST POPULAR
+          </div>
+        )}
+        {/* Image */}
+        <div style={{ position: "relative", height: 220, overflow: "hidden" }}>
+          <img src={branch.img} alt={branch.name}
+            style={{ width: "100%", height: "100%", objectFit: "cover", transform: hov ? "scale(1.06)" : "scale(1)", transition: "transform 0.6s ease", filter: "brightness(0.75) contrast(1.1)" }} />
+          <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to top, rgba(13,13,13,1) 0%, transparent 60%)" }} />
+          <div style={{ position: "absolute", bottom: 16, left: 20 }}>
+            <div style={{ fontSize: 9, color: "var(--red)", letterSpacing: "0.2em", fontWeight: 700 }}>{branch.badge}</div>
+            <h3 style={{ fontFamily: "var(--font-head)", fontSize: 26, fontWeight: 900, color: "white", lineHeight: 1 }}>
+              {branch.name.toUpperCase()}
+            </h3>
+            <p style={{ fontSize: 10, color: "rgba(255,255,255,0.45)", letterSpacing: "0.12em" }}>{branch.subtitle}</p>
+          </div>
+        </div>
+
+        <div style={{ padding: "20px 24px 28px" }}>
+          {/* Rating */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+            <StarRating filled={5} />
+            <span style={{ fontSize: 13, fontWeight: 800, color: "white" }}>{branch.rating}</span>
+            <span style={{ fontSize: 11, color: "rgba(255,255,255,0.35)" }}>({branch.reviews} reviews)</span>
+            <span style={{ marginLeft: "auto", fontSize: 10, color: "rgba(255,255,255,0.4)", display: "flex", alignItems: "center", gap: 4 }}>
+              🕐 {branch.hours}
+            </span>
+          </div>
+
+          <p style={{ fontSize: 12, color: "rgba(255,255,255,0.4)", lineHeight: 1.6, marginBottom: 14 }}>📍 {branch.address}</p>
+          <p style={{ fontSize: 13, color: "rgba(255,255,255,0.6)", lineHeight: 1.7, marginBottom: 18 }}>{branch.highlight}</p>
+
+          {branch.note && (
+            <div style={{ background: "rgba(220,38,38,0.08)", border: "1px solid rgba(220,38,38,0.2)", borderRadius: 4, padding: "8px 12px", marginBottom: 16, fontSize: 11, color: "var(--red)" }}>
+              💡 {branch.note}
+            </div>
+          )}
+
+          {/* Programs */}
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", letterSpacing: "0.2em", marginBottom: 8 }}>PROGRAMS</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {branch.programs.map(p => (
+                <span key={p} style={{ fontSize: 10, padding: "3px 10px", borderRadius: 3, background: "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.6)", fontWeight: 600 }}>{p}</span>
+              ))}
+            </div>
+          </div>
+
+          {/* Amenities */}
+          <div style={{ marginBottom: 24 }}>
+            <div style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", letterSpacing: "0.2em", marginBottom: 8 }}>AMENITIES</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {branch.amenities.map(a => (
+                <span key={a} style={{ fontSize: 10, padding: "3px 10px", borderRadius: 3, background: "rgba(220,38,38,0.08)", border: "1px solid rgba(220,38,38,0.2)", color: "rgba(220,38,38,0.8)", fontWeight: 600 }}>✓ {a}</span>
+              ))}
+            </div>
+          </div>
+
+          <GlowBtn href="#contact" variant={branch.featured ? "red" : "outline"} className="w-full">
+            Book a Trial →
+          </GlowBtn>
+        </div>
+      </div>
+    </FadeUp>
+  );
+}
+
+function Branches() {
+  return (
+    <section id="branches" style={{ background: "#050505", padding: "120px 5vw" }}>
+      <div style={{ maxWidth: 1280, margin: "0 auto" }}>
+        <FadeUp>
+          <div style={{ textAlign: "center", marginBottom: 64 }}>
+            <RedLine className="justify-center mb-5" />
+            <p style={{ fontSize: 11, color: "var(--red)", letterSpacing: "0.25em", fontWeight: 700, marginBottom: 12 }}>3 ELITE LOCATIONS</p>
+            <h2 style={{ fontFamily: "var(--font-head)", fontSize: "clamp(2rem, 4vw, 3.5rem)", fontWeight: 900, color: "white", lineHeight: 1.05 }}>
+              FIND YOUR<br /><span style={{ color: "var(--red)" }}>NEAREST BRANCH</span>
+            </h2>
+          </div>
+        </FadeUp>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: 28 }}>
+          {BRANCHES.map((b, i) => <BranchCard key={b.name} branch={b} delay={i * 0.12} />)}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ═══════════════════════════════════════════════
+   PRICING
+   ═══════════════════════════════════════════════ */
+const PLANS = [
+  {
+    name: "Starter", price: "₹1,500", period: "/month",
+    sub: "Perfect for beginners",
+    features: ["Access to gym floor", "Basic equipment use", "1 group class/week", "Drinking water", "WiFi access", "Locker facility"],
+    missing: ["Combat sports access", "Swimming pool", "Sauna", "Personal trainer"],
+  },
+  {
+    name: "Performance", price: "₹3,500", period: "/month",
+    sub: "Most popular choice", popular: true,
+    features: ["Full gym floor access", "All group classes", "Combat sports intro", "Swimming pool access", "Locker & WiFi", "Drinking water", "Weight management support", "2 PT sessions/month"],
+    missing: ["Sauna body care", "Private coaching"],
+  },
+  {
+    name: "Elite", price: "₹6,000", period: "/month",
+    sub: "Unlimited everything",
+    features: ["Unlimited gym + classes", "Full combat sports access", "Swimming pool", "Sauna body care", "Dedicated personal trainer", "Nutrition guidance", "Priority scheduling", "All amenities included", "Monthly assessment"],
+    missing: [],
+  },
+  {
+    name: "Annual VIP", price: "₹48,000", period: "/year",
+    sub: "Save 33% — best value",
+    features: ["Everything in Elite", "Annual health check", "Guest passes (×12)", "Exclusive member events", "Brand merchandise", "Priority booking", "Dedicated success coach"],
+    missing: [], annual: true,
+  },
+];
+
+function PricingCard({ plan, delay }) {
+  const [hov, setHov] = useState(false);
+  return (
+    <FadeUp delay={delay}>
+      <div
+        onMouseEnter={() => setHov(true)}
+        onMouseLeave={() => setHov(false)}
+        style={{
+          background: plan.popular ? "linear-gradient(145deg, rgba(220,38,38,0.12), rgba(0,0,0,0.8))" : plan.annual ? "linear-gradient(145deg, rgba(30,30,50,0.8), rgba(0,0,0,0.8))" : "#0d0d0d",
+          border: `1px solid ${plan.popular ? "rgba(220,38,38,0.5)" : plan.annual ? "rgba(100,120,200,0.3)" : hov ? "rgba(220,38,38,0.2)" : "rgba(255,255,255,0.07)"}`,
+          borderRadius: 8, padding: "36px 28px",
+          transform: plan.popular ? "scale(1.04)" : hov ? "translateY(-6px)" : "none",
+          boxShadow: plan.popular ? "0 20px 60px rgba(220,38,38,0.15)" : "none",
+          transition: "all 0.35s ease",
+          position: "relative", overflow: "hidden",
+        }}
+      >
+        {plan.popular && (
+          <>
+            <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: "var(--red)", boxShadow: "0 0 20px var(--red)" }} />
+            <div style={{ position: "absolute", top: 16, right: 16, background: "var(--red)", padding: "4px 12px", borderRadius: 3, fontSize: 9, color: "white", letterSpacing: "0.15em", fontWeight: 800 }}>MOST POPULAR</div>
+          </>
+        )}
+        {plan.annual && <div style={{ position: "absolute", top: 16, right: 16, background: "rgba(100,120,220,0.3)", border: "1px solid rgba(100,120,220,0.4)", padding: "4px 12px", borderRadius: 3, fontSize: 9, color: "#a5b4fc", letterSpacing: "0.15em", fontWeight: 800 }}>BEST VALUE</div>}
+
+        <div style={{ fontSize: 10, color: plan.popular ? "var(--red)" : "rgba(255,255,255,0.4)", letterSpacing: "0.2em", fontWeight: 700, marginBottom: 8 }}>{plan.sub.toUpperCase()}</div>
+        <h3 style={{ fontFamily: "var(--font-head)", fontSize: 24, fontWeight: 900, color: "white", marginBottom: 16 }}>{plan.name}</h3>
+
+        <div style={{ display: "flex", alignItems: "baseline", gap: 4, marginBottom: 28 }}>
+          <span style={{ fontFamily: "var(--font-head)", fontSize: 42, fontWeight: 900, color: plan.popular ? "var(--red)" : "white" }}>{plan.price}</span>
+          <span style={{ fontSize: 13, color: "rgba(255,255,255,0.4)" }}>{plan.period}</span>
+        </div>
+
+        <div style={{ borderTop: "1px solid rgba(255,255,255,0.07)", paddingTop: 24, marginBottom: 28 }}>
+          {plan.features.map(f => (
+            <div key={f} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+              <div style={{ width: 16, height: 16, borderRadius: "50%", background: "rgba(220,38,38,0.15)", border: "1.5px solid var(--red)", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <span style={{ color: "var(--red)", fontSize: 9 }}>✓</span>
+              </div>
+              <span style={{ fontSize: 13, color: "rgba(255,255,255,0.65)" }}>{f}</span>
+            </div>
+          ))}
+          {plan.missing.map(f => (
+            <div key={f} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, opacity: 0.3 }}>
+              <div style={{ width: 16, height: 16, borderRadius: "50%", background: "rgba(255,255,255,0.05)", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <span style={{ color: "rgba(255,255,255,0.3)", fontSize: 9 }}>—</span>
+              </div>
+              <span style={{ fontSize: 13, color: "rgba(255,255,255,0.35)" }}>{f}</span>
+            </div>
+          ))}
+        </div>
+
+        <GlowBtn href="#contact" variant={plan.popular ? "red" : "outline"} className="w-full">
+          {plan.popular ? "Get Started →" : "Choose Plan →"}
+        </GlowBtn>
+      </div>
+    </FadeUp>
+  );
+}
+
+function Pricing() {
+  return (
+    <section id="pricing" style={{ background: "#080808", padding: "120px 5vw" }}>
+      <div style={{ maxWidth: 1280, margin: "0 auto" }}>
+        <FadeUp>
+          <div style={{ textAlign: "center", marginBottom: 64 }}>
+            <RedLine className="justify-center mb-5" />
+            <p style={{ fontSize: 11, color: "var(--red)", letterSpacing: "0.25em", fontWeight: 700, marginBottom: 12 }}>MEMBERSHIP PLANS</p>
+            <h2 style={{ fontFamily: "var(--font-head)", fontSize: "clamp(2rem, 4vw, 3.5rem)", fontWeight: 900, color: "white", lineHeight: 1.05, marginBottom: 16 }}>
+              INVEST IN<br /><span style={{ color: "var(--red)" }}>YOUR GREATNESS</span>
+            </h2>
+            <p style={{ color: "rgba(255,255,255,0.45)", fontSize: 15, maxWidth: 500, margin: "0 auto" }}>
+              Flexible plans designed for every level. All memberships include access to your chosen branch's full facilities.
+            </p>
+          </div>
+        </FadeUp>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 24, alignItems: "start" }}>
+          {PLANS.map((p, i) => <PricingCard key={p.name} plan={p} delay={i * 0.1} />)}
+        </div>
+        <FadeUp delay={0.2}>
+          <div style={{ textAlign: "center", marginTop: 48 }}>
+            <p style={{ color: "rgba(255,255,255,0.35)", fontSize: 13, marginBottom: 20 }}>
+              Not sure which plan is right for you? Try one session completely free.
+            </p>
+            <GlowBtn href="#contact" variant="outline">Book Your Free Trial Session</GlowBtn>
+          </div>
+        </FadeUp>
+      </div>
+    </section>
+  );
+}
+
+/* ═══════════════════════════════════════════════
+   FEATURES
+   ═══════════════════════════════════════════════ */
+const FEATURES = [
+  { icon: "🏋️", title: "Premium Fitline Equipment", desc: "Top-notch certified equipment maintained to the highest standards." },
+  { icon: "✨", title: "Hygienic Environment", desc: "Immaculate cleanliness protocols throughout all our branches." },
+  { icon: "🏊", title: "Swimming Pool", desc: "Full swimming pool access at Port Blair and Mumbai branches." },
+  { icon: "📶", title: "High-Speed WiFi", desc: "Stay connected at all three branches during your sessions." },
+  { icon: "🧖", title: "Sauna Body Care", desc: "Premium sauna and recovery facilities at select branches." },
+  { icon: "⚖️", title: "Weight Management", desc: "Structured weight management programs with nutrition support." },
+  { icon: "🌱", title: "Beginner Friendly", desc: "Every program designed to welcome and guide new members." },
+  { icon: "🏅", title: "Expert Coaches", desc: "Championship-level coaches with years of competitive experience." },
+  { icon: "🔐", title: "Secure Lockers", desc: "Personal locker facilities to safeguard your belongings." },
+  { icon: "💧", title: "Drinking Water", desc: "Clean purified water stations available at all times." },
+  { icon: "🕐", title: "Flexible Hours", desc: "Early mornings to late nights. Mumbai branch is 24/7 open." },
+  { icon: "🥊", title: "Combat Sports Hub", desc: "India's most comprehensive combat sports training facility." },
+  { icon: "♿", title: "Wheelchair Accessible", desc: "Full accessibility at Mumbai branch — parking and washrooms." },
+];
+
+function Features() {
+  return (
+    <section id="features" style={{ background: "#050505", padding: "120px 5vw" }}>
+      <div style={{ maxWidth: 1280, margin: "0 auto" }}>
+        <FadeUp>
+          <div style={{ textAlign: "center", marginBottom: 64 }}>
+            <RedLine className="justify-center mb-5" />
+            <p style={{ fontSize: 11, color: "var(--red)", letterSpacing: "0.25em", fontWeight: 700, marginBottom: 12 }}>WHY XTREME9</p>
+            <h2 style={{ fontFamily: "var(--font-head)", fontSize: "clamp(2rem, 4vw, 3.5rem)", fontWeight: 900, color: "white" }}>
+              EVERYTHING YOU<br /><span style={{ color: "var(--red)" }}>NEED TO EXCEL</span>
+            </h2>
+          </div>
+        </FadeUp>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(230px, 1fr))", gap: 20 }}>
+          {FEATURES.map((f, i) => (
+            <FadeUp key={f.title} delay={i * 0.05}>
+              <FeatureCard feature={f} />
+            </FadeUp>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function FeatureCard({ feature }) {
+  const [hov, setHov] = useState(false);
+  return (
+    <div
+      onMouseEnter={() => setHov(true)}
+      onMouseLeave={() => setHov(false)}
+      style={{
+        padding: "24px 20px", borderRadius: 6,
+        background: hov ? "rgba(220,38,38,0.06)" : "rgba(255,255,255,0.02)",
+        border: `1px solid ${hov ? "rgba(220,38,38,0.25)" : "rgba(255,255,255,0.05)"}`,
+        transform: hov ? "translateY(-4px)" : "none",
+        transition: "all 0.3s ease",
+      }}
+    >
+      <div style={{ fontSize: 28, marginBottom: 12 }}>{feature.icon}</div>
+      <h4 style={{ color: "white", fontWeight: 700, fontSize: 14, marginBottom: 8 }}>{feature.title}</h4>
+      <p style={{ color: "rgba(255,255,255,0.4)", fontSize: 12, lineHeight: 1.6 }}>{feature.desc}</p>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════
+   GALLERY
+   ═══════════════════════════════════════════════ */
+function Gallery() {
+  const [activeIdx, setActiveIdx] = useState(null);
+
+  const galleryItems = [
+    { src: A.interior1, label: "The Arena Floor", span: "large" },
+    { src: A.interior3, label: "Main Training Zone" },
+    { src: A.interior5, label: "One More Rep" },
+    { src: A.trainer2, label: "Peak Condition" },
+    { src: A.interior2, label: "Cardio Zone" },
+    { src: A.interior4, label: "Equipment Bay" },
+    { src: A.training1, label: "In the Zone" },
+    { src: A.reception, label: "The Experience Begins" },
+  ];
+
+  return (
+    <section id="gallery" style={{ background: "#080808", padding: "120px 5vw" }}>
+      <div style={{ maxWidth: 1280, margin: "0 auto" }}>
+        <FadeUp>
+          <div style={{ textAlign: "center", marginBottom: 64 }}>
+            <RedLine className="justify-center mb-5" />
+            <p style={{ fontSize: 11, color: "var(--red)", letterSpacing: "0.25em", fontWeight: 700, marginBottom: 12 }}>EXPERIENCE THE SPACE</p>
+            <h2 style={{ fontFamily: "var(--font-head)", fontSize: "clamp(2rem, 4vw, 3.5rem)", fontWeight: 900, color: "white" }}>
+              FEEL THE<br /><span style={{ color: "var(--red)" }}>XTREME9 DIFFERENCE</span>
+            </h2>
+          </div>
+        </FadeUp>
+
+        {/* Video feature */}
+        <FadeUp delay={0.1}>
+          <div style={{ position: "relative", borderRadius: 8, overflow: "hidden", marginBottom: 24 }}>
+            <video autoPlay muted loop playsInline style={{ width: "100%", height: "clamp(280px, 40vw, 520px)", objectFit: "cover", display: "block", filter: "brightness(0.85)" }}>
+              <source src={A.gymVideo} type="video/mp4" />
+            </video>
+            <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to right, rgba(0,0,0,0.6) 0%, transparent 50%, rgba(0,0,0,0.6) 100%)" }} />
+            <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <div style={{ textAlign: "center" }}>
+                <div style={{ fontSize: 11, color: "var(--red)", letterSpacing: "0.25em", fontWeight: 700, marginBottom: 12 }}>LIVE THE EXPERIENCE</div>
+                <h3 style={{ fontFamily: "var(--font-head)", fontSize: "clamp(1.8rem, 3.5vw, 3rem)", fontWeight: 900, color: "white" }}>
+                  CLIENT TRANSFORMATIONS
+                </h3>
+              </div>
+            </div>
+          </div>
+        </FadeUp>
+
+        {/* Masonry-style grid */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gridTemplateRows: "auto", gap: 12 }}>
+          {galleryItems.map((item, i) => (
+            <FadeUp key={i} delay={i * 0.06}>
+              <GalleryItem item={item} idx={i} isLarge={i === 0} onClick={() => setActiveIdx(i)} />
+            </FadeUp>
+          ))}
+        </div>
+      </div>
+
+      {/* Lightbox */}
+      {activeIdx !== null && (
+        <div
+          onClick={() => setActiveIdx(null)}
+          style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(0,0,0,0.95)", display: "flex", alignItems: "center", justifyContent: "center", padding: "5vw" }}
+        >
+          <img src={galleryItems[activeIdx].src} alt={galleryItems[activeIdx].label}
+            style={{ maxWidth: "90vw", maxHeight: "85vh", objectFit: "contain", borderRadius: 4 }} />
+          <button onClick={() => setActiveIdx(null)} style={{ position: "absolute", top: 20, right: 24, color: "white", fontSize: 28, background: "none", border: "none", cursor: "pointer" }}>✕</button>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function GalleryItem({ item, idx, isLarge, onClick }) {
+  const [hov, setHov] = useState(false);
+  const style = isLarge
+    ? { gridColumn: "1 / 3", gridRow: "1 / 3" }
+    : {};
+  return (
+    <div
+      onClick={onClick}
+      onMouseEnter={() => setHov(true)}
+      onMouseLeave={() => setHov(false)}
+      style={{ ...style, position: "relative", overflow: "hidden", borderRadius: 6, cursor: "pointer",
+        aspectRatio: isLarge ? "1" : "1", background: "#111" }}
+    >
+      <img src={item.src} alt={item.label}
+        style={{ width: "100%", height: "100%", objectFit: "cover", display: "block",
+          transform: hov ? "scale(1.08)" : "scale(1)", filter: `brightness(${hov ? 0.65 : 0.8}) contrast(1.1)`,
+          transition: "all 0.5s ease" }} />
+      <div style={{ position: "absolute", inset: 0, background: hov ? "rgba(220,38,38,0.1)" : "transparent", transition: "background 0.3s" }} />
+      <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "30px 16px 16px",
+        background: "linear-gradient(to top, rgba(0,0,0,0.8) 0%, transparent 100%)",
+        transform: hov ? "translateY(0)" : "translateY(10px)", opacity: hov ? 1 : 0, transition: "all 0.3s ease" }}>
+        <p style={{ color: "white", fontSize: 12, fontWeight: 700, letterSpacing: "0.1em" }}>{item.label}</p>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════
+   TRANSFORMATIONS / TESTIMONIALS
+   ═══════════════════════════════════════════════ */
+const TESTIMONIALS = [
+  { name: "Aravind M.", branch: "Port Blair", rating: 5, text: "Best gym I have ever been to. The Fitline equipment is world-class, the ambiance is electric, and the trainers genuinely care about your progress. Cannot recommend enough." },
+  { name: "Sneha R.", branch: "Thane", rating: 5, text: "I joined for boxing and ended up discovering a whole new side of fitness. The coaches here are strict but fun — it never feels like a chore. 17 years of excellence and it shows." },
+  { name: "Karan P.", branch: "Mumbai", rating: 5, text: "The 24-hour access is a game changer. I train at 5 AM and the energy is still incredible. Trainers are always available and every workout is different. Genuinely never boring." },
+  { name: "Priya S.", branch: "Port Blair", rating: 5, text: "As a complete beginner I was nervous, but the team made me feel welcomed from day one. The hygiene here is impeccable and the sauna is the perfect recovery after a session." },
+  { name: "Rohit D.", branch: "Thane", rating: 5, text: "The MMA and BJJ classes are phenomenal. The coaches have real competitive experience and it shows in how they teach. This is not your average gym — it is a combat sports academy." },
+  { name: "Anita K.", branch: "Mumbai", rating: 5, text: "I have seen real transformation in 3 months. Every session I learn something new. The holistic approach to fitness here — mind, body, skill — sets it apart from every other gym." },
+];
+
+function Testimonials() {
+  const [active, setActive] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setActive(a => (a + 1) % TESTIMONIALS.length), 5000);
+    return () => clearInterval(t);
+  }, []);
+
+  return (
+    <section id="testimonials" style={{ background: "#050505", padding: "120px 5vw" }}>
+      <div style={{ maxWidth: 1280, margin: "0 auto" }}>
+        <FadeUp>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "5vw", alignItems: "center" }}
+            className="grid-cols-1 md:grid-cols-2">
+
+            {/* Left: transformation image */}
+            <div style={{ position: "relative" }}>
+              <div style={{ borderRadius: 8, overflow: "hidden" }}>
+                <img src={A.transform1} alt="Client Transformation"
+                  style={{ width: "100%", height: 480, objectFit: "cover", objectPosition: "center", display: "block", filter: "contrast(1.1) brightness(0.9)" }} />
+                <div style={{ position: "absolute", inset: 0, background: "linear-gradient(135deg, rgba(220,38,38,0.1) 0%, transparent 50%)" }} />
+              </div>
+              <div style={{ position: "absolute", bottom: 24, left: 24, right: 24,
+                background: "rgba(0,0,0,0.85)", backdropFilter: "blur(12px)",
+                border: "1px solid rgba(220,38,38,0.3)", borderRadius: 6, padding: "16px 20px" }}>
+                <div style={{ fontSize: 10, color: "var(--red)", letterSpacing: "0.2em", fontWeight: 700, marginBottom: 6 }}>REAL RESULTS · REAL PEOPLE</div>
+                <div style={{ fontSize: 13, color: "rgba(255,255,255,0.7)", lineHeight: 1.6 }}>
+                  Our members' transformations speak louder than any marketing. 
+                  Join the hundreds who have changed their lives at Xtreme9.
+                </div>
+              </div>
+            </div>
+
+            {/* Right: testimonials */}
+            <div>
+              <RedLine className="mb-5" />
+              <p style={{ fontSize: 11, color: "var(--red)", letterSpacing: "0.25em", fontWeight: 700, marginBottom: 12 }}>MEMBER STORIES</p>
+              <h2 style={{ fontFamily: "var(--font-head)", fontSize: "clamp(1.8rem, 3vw, 2.8rem)", fontWeight: 900, color: "white", marginBottom: 40, lineHeight: 1.1 }}>
+                WHAT OUR<br /><span style={{ color: "var(--red)" }}>CHAMPIONS SAY</span>
+              </h2>
+
+              {/* Active testimonial */}
+              <div style={{ position: "relative", minHeight: 200 }}>
+                {TESTIMONIALS.map((t, i) => (
+                  <div key={i} style={{
+                    position: i === 0 ? "relative" : "absolute", top: 0, left: 0, right: 0,
+                    opacity: i === active ? 1 : 0,
+                    transform: i === active ? "translateY(0)" : "translateY(20px)",
+                    transition: "all 0.5s ease", pointerEvents: i === active ? "auto" : "none",
+                  }}>
+                    <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 8, padding: "28px 28px 24px" }}>
+                      <div style={{ fontSize: 48, color: "var(--red)", fontFamily: "Georgia, serif", lineHeight: 0.7, marginBottom: 16, opacity: 0.6 }}>"</div>
+                      <p style={{ color: "rgba(255,255,255,0.75)", fontSize: 15, lineHeight: 1.8, marginBottom: 24 }}>{t.text}</p>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                        <div>
+                          <div style={{ fontWeight: 800, color: "white", fontSize: 14 }}>{t.name}</div>
+                          <div style={{ fontSize: 11, color: "var(--red)", marginTop: 3 }}>{t.branch} Branch</div>
+                        </div>
+                        <StarRating filled={t.rating} />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Dots */}
+              <div style={{ display: "flex", gap: 8, marginTop: 24 }}>
+                {TESTIMONIALS.map((_, i) => (
+                  <button key={i} onClick={() => setActive(i)}
+                    style={{ width: i === active ? 28 : 8, height: 8, borderRadius: 4,
+                      background: i === active ? "var(--red)" : "rgba(255,255,255,0.15)",
+                      border: "none", cursor: "pointer", transition: "all 0.3s ease",
+                      boxShadow: i === active ? "0 0 10px rgba(220,38,38,0.4)" : "none" }} />
+                ))}
+              </div>
+            </div>
+          </div>
+        </FadeUp>
+      </div>
+    </section>
+  );
+}
+
+/* ═══════════════════════════════════════════════
+   TRAINERS
+   ═══════════════════════════════════════════════ */
+const COACHES = [
+  { name: "Coach Rahul", role: "Combat Sports Director", specialty: "MMA · Boxing · Kickboxing", branch: "Thane HQ", bio: "17 years at the forefront of combat sports coaching. Rahul brings championship discipline and beginner patience into every session.", img: A.trainer1, style: "Strict but motivating" },
+  { name: "Coach Arjun", role: "Strength & Performance", specialty: "Weight Training · CrossFit · Functional", branch: "Port Blair · Mumbai", bio: "A competitive bodybuilder turned elite coach, Arjun specialises in progressive overload, form mastery, and real transformation.", img: A.trainer2, style: "Technical and results-focused" },
+  { name: "Coach Divya", role: "Holistic Wellness Lead", specialty: "Yoga · Power Yoga · Weight Management", branch: "All Branches", bio: "Divya blends ancient practice with modern science to create mind-body programs that deliver measurable physical and mental results.", img: A.transform1, style: "Empowering and supportive" },
+];
+
+function Trainers() {
+  return (
+    <section id="trainers" style={{ background: "#080808", padding: "120px 5vw" }}>
+      <div style={{ maxWidth: 1280, margin: "0 auto" }}>
+        <FadeUp>
+          <div style={{ textAlign: "center", marginBottom: 64 }}>
+            <RedLine className="justify-center mb-5" />
+            <p style={{ fontSize: 11, color: "var(--red)", letterSpacing: "0.25em", fontWeight: 700, marginBottom: 12 }}>MEET YOUR COACHES</p>
+            <h2 style={{ fontFamily: "var(--font-head)", fontSize: "clamp(2rem, 4vw, 3.5rem)", fontWeight: 900, color: "white" }}>
+              TRAINED BY THE<br /><span style={{ color: "var(--red)" }}>BEST IN THE GAME</span>
+            </h2>
+          </div>
+        </FadeUp>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 28 }}>
+          {COACHES.map((c, i) => (
+            <FadeUp key={c.name} delay={i * 0.12}>
+              <CoachCard coach={c} />
+            </FadeUp>
+          ))}
+        </div>
+        {/* Champion photo feature */}
+        <FadeUp delay={0.2}>
+          <div style={{ marginTop: 48, borderRadius: 8, overflow: "hidden", position: "relative" }}>
+            <img src={A.champion} alt="Our Champion" style={{ width: "100%", height: 360, objectFit: "cover", objectPosition: "center 20%", display: "block", filter: "brightness(0.6) contrast(1.1)" }} />
+            <div style={{ position: "absolute", inset: 0, background: "linear-gradient(90deg, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.3) 60%)" }} />
+            <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", padding: "0 5vw" }}>
+              <div style={{ maxWidth: 540 }}>
+                <div style={{ fontSize: 10, color: "var(--red)", letterSpacing: "0.25em", fontWeight: 700, marginBottom: 12 }}>FROM OUR GYM TO THE PODIUM</div>
+                <h3 style={{ fontFamily: "var(--font-head)", fontSize: "clamp(1.5rem, 3vw, 2.5rem)", fontWeight: 900, color: "white", lineHeight: 1.05, marginBottom: 16 }}>
+                  WE PRODUCE<br />CHAMPIONS
+                </h3>
+                <p style={{ color: "rgba(255,255,255,0.6)", fontSize: 14, lineHeight: 1.7 }}>
+                  Our members compete — and win. Xtreme9 coaches have guided athletes to regional and national titles. 
+                  Whether you are chasing a trophy or transforming your life, we are with you every step of the way.
+                </p>
+              </div>
+            </div>
+          </div>
+        </FadeUp>
+      </div>
+    </section>
+  );
+}
+
+function CoachCard({ coach }) {
+  const [hov, setHov] = useState(false);
+  return (
+    <div
+      onMouseEnter={() => setHov(true)}
+      onMouseLeave={() => setHov(false)}
+      style={{
+        background: "#0d0d0d", borderRadius: 8, overflow: "hidden",
+        border: `1px solid ${hov ? "rgba(220,38,38,0.35)" : "rgba(255,255,255,0.07)"}`,
+        transform: hov ? "translateY(-8px)" : "none",
+        boxShadow: hov ? "0 24px 64px rgba(0,0,0,0.5)" : "none",
+        transition: "all 0.4s ease",
+      }}
+    >
+      <div style={{ position: "relative", height: 280, overflow: "hidden" }}>
+        <img src={coach.img} alt={coach.name}
+          style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top",
+            transform: hov ? "scale(1.05)" : "scale(1)", filter: "brightness(0.75) contrast(1.1)",
+            transition: "transform 0.5s ease" }} />
+        <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to top, #0d0d0d 0%, transparent 50%)" }} />
+        <div style={{ position: "absolute", bottom: 16, left: 20 }}>
+          <div style={{ fontSize: 9, color: "var(--red)", letterSpacing: "0.15em", fontWeight: 700 }}>{coach.branch}</div>
+        </div>
+      </div>
+      <div style={{ padding: "20px 24px 28px" }}>
+        <h3 style={{ fontFamily: "var(--font-head)", fontSize: 22, fontWeight: 900, color: "white", marginBottom: 4 }}>{coach.name}</h3>
+        <div style={{ fontSize: 11, color: "var(--red)", letterSpacing: "0.1em", fontWeight: 700, marginBottom: 8 }}>{coach.role}</div>
+        <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", marginBottom: 14 }}>🎯 {coach.specialty}</div>
+        <p style={{ fontSize: 13, color: "rgba(255,255,255,0.55)", lineHeight: 1.7, marginBottom: 16 }}>{coach.bio}</p>
+        <div style={{ fontSize: 11, color: "rgba(255,255,255,0.3)", fontStyle: "italic" }}>Style: {coach.style}</div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════
+   FAQ
+   ═══════════════════════════════════════════════ */
+const FAQS = [
+  { q: "What are the branch timings?", a: "Port Blair is open until 10:30 PM daily. Thane (Mira Road) is open until 10:00 PM. Our Mumbai (Ghatkopar) branch is open 24 hours, 7 days a week — perfect for early birds and night owls alike." },
+  { q: "Which branch is best for beginners?", a: "All three branches are beginner-friendly! Port Blair is especially known for its warm, supportive staff and structured onboarding. Thane is ideal for beginners interested in combat sports. Mumbai offers 24/7 flexibility great for people building a new routine." },
+  { q: "What programs are available across branches?", a: "We offer 13 programs: Gym, CrossFit, Zumba, Yoga, Power Yoga, Weight Lifting, MMA, Boxing, Kickboxing, Brazilian Jiu-Jitsu, Karate, Judo, Functional Training, and Gymnastics. Program availability varies by branch." },
+  { q: "Do you offer combat sports training?", a: "Yes — Xtreme9 is one of India's most comprehensive combat sports facilities. Our Thane branch (established 2009) is the flagship combat hub offering MMA, Boxing, Kickboxing, BJJ, Karate, and Judo. Boxing coaching starts at ₹1,500. Mumbai also offers combat-focused programs." },
+  { q: "Do you have a swimming pool and sauna?", a: "Swimming pools are available at Port Blair and Mumbai branches. Sauna body care services are available at Port Blair. Check with your preferred branch for current availability and timings." },
+  { q: "What is the Feesback partnership in Thane?", a: "Our Thane branch partners with Feesback — parents can redeem school fee points as feescoins toward a free gym membership for their children. Contact the Thane branch directly for full details on this exclusive offer." },
+  { q: "How do I book a trial session?", a: "Simply fill out the contact form on this page, WhatsApp us, or walk into any branch. Your first trial session is free and includes a tour, consultation with a coach, and a sample class. No commitment required." },
+  { q: "Is Xtreme9 accessible for people with disabilities?", a: "Yes. Our Mumbai (Ghatkopar) branch features wheelchair-accessible car parking and wheelchair-accessible washrooms. Please contact us in advance so we can ensure the best possible experience for your visit." },
+];
+
+function FAQ() {
+  const [open, setOpen] = useState(null);
+  return (
+    <section id="faq" style={{ background: "#050505", padding: "120px 5vw" }}>
+      <div style={{ maxWidth: 900, margin: "0 auto" }}>
+        <FadeUp>
+          <div style={{ textAlign: "center", marginBottom: 64 }}>
+            <RedLine className="justify-center mb-5" />
+            <p style={{ fontSize: 11, color: "var(--red)", letterSpacing: "0.25em", fontWeight: 700, marginBottom: 12 }}>QUESTIONS ANSWERED</p>
+            <h2 style={{ fontFamily: "var(--font-head)", fontSize: "clamp(2rem, 4vw, 3rem)", fontWeight: 900, color: "white" }}>
+              EVERYTHING YOU<br /><span style={{ color: "var(--red)" }}>NEED TO KNOW</span>
+            </h2>
+          </div>
+        </FadeUp>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {FAQS.map((faq, i) => (
+            <FadeUp key={i} delay={i * 0.05}>
+              <div
+                style={{
+                  background: open === i ? "rgba(220,38,38,0.06)" : "rgba(255,255,255,0.02)",
+                  border: `1px solid ${open === i ? "rgba(220,38,38,0.3)" : "rgba(255,255,255,0.07)"}`,
+                  borderRadius: 6, overflow: "hidden", transition: "all 0.3s ease",
+                }}
+              >
+                <button
+                  onClick={() => setOpen(open === i ? null : i)}
+                  style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center",
+                    padding: "20px 24px", background: "none", border: "none", cursor: "pointer", textAlign: "left" }}
+                >
+                  <span style={{ fontWeight: 700, color: "white", fontSize: 15, paddingRight: 16 }}>{faq.q}</span>
+                  <span style={{ color: "var(--red)", fontSize: 20, transform: open === i ? "rotate(45deg)" : "none", transition: "transform 0.3s", flexShrink: 0 }}>+</span>
+                </button>
+                {open === i && (
+                  <div style={{ padding: "0 24px 20px", color: "rgba(255,255,255,0.6)", fontSize: 14, lineHeight: 1.8 }}>
+                    {faq.a}
+                  </div>
+                )}
+              </div>
+            </FadeUp>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ═══════════════════════════════════════════════
+   FINAL CTA
+   ═══════════════════════════════════════════════ */
+function FinalCTA() {
+  return (
+    <section style={{ position: "relative", overflow: "hidden", padding: "160px 5vw" }}>
+      <img src={A.interior3} alt="Gym floor" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", filter: "brightness(0.25) contrast(1.2)" }} />
+      <div style={{ position: "absolute", inset: 0, background: "linear-gradient(135deg, rgba(0,0,0,0.9) 0%, rgba(220,38,38,0.15) 100%)" }} />
+      {/* Red glow top */}
+      <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: "linear-gradient(90deg, transparent, var(--red), transparent)", boxShadow: "0 0 40px rgba(220,38,38,0.5)" }} />
+
+      <div style={{ position: "relative", zIndex: 2, maxWidth: 800, margin: "0 auto", textAlign: "center" }}>
+        <FadeUp>
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 8, marginBottom: 24,
+            background: "rgba(220,38,38,0.12)", border: "1px solid rgba(220,38,38,0.3)", borderRadius: 4, padding: "6px 16px" }}>
+            <div style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--red)", boxShadow: "0 0 8px var(--red)", animation: "pulse 2s ease infinite" }} />
+            <span style={{ fontSize: 10, color: "var(--red)", letterSpacing: "0.25em", fontWeight: 700 }}>YOUR JOURNEY STARTS TODAY</span>
+          </div>
+          <h2 style={{ fontFamily: "var(--font-head)", fontSize: "clamp(2.5rem, 6vw, 5rem)", fontWeight: 900, color: "white", lineHeight: 0.95, marginBottom: 24 }}>
+            STOP WAITING.<br />
+            <span style={{ color: "var(--red)", textShadow: "0 0 40px rgba(220,38,38,0.4)" }}>START BECOMING.</span>
+          </h2>
+          <p style={{ color: "rgba(255,255,255,0.6)", fontSize: "clamp(14px, 1.5vw, 17px)", lineHeight: 1.8, marginBottom: 48, maxWidth: 540, margin: "0 auto 48px" }}>
+            Three locations. Thirteen programs. Seventeen years of turning goals into results. 
+            Book your free trial today — no commitment, no excuses, just results.
+          </p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 16, justifyContent: "center" }}>
+            <GlowBtn href="#contact" variant="red">Book Free Trial →</GlowBtn>
+            <a href="https://wa.me/919999999999" target="_blank" rel="noopener noreferrer"
+              style={{ display: "inline-flex", alignItems: "center", gap: 10, padding: "12px 28px", borderRadius: 4,
+                background: "rgba(37,211,102,0.15)", border: "1.5px solid rgba(37,211,102,0.4)", color: "white",
+                fontWeight: 700, fontSize: 13, letterSpacing: "0.1em", textDecoration: "none", transition: "all 0.3s ease" }}
+              onMouseEnter={e => { e.currentTarget.style.background = "rgba(37,211,102,0.25)"; }}
+              onMouseLeave={e => { e.currentTarget.style.background = "rgba(37,211,102,0.15)"; }}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="#25D366"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.136.562 4.14 1.537 5.879L.057 23.882l6.187-1.45A11.945 11.945 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.818a9.818 9.818 0 01-4.989-1.368l-.358-.214-3.716.871.936-3.625-.234-.372A9.79 9.79 0 012.182 12C2.182 6.562 6.562 2.182 12 2.182S21.818 6.562 21.818 12 17.438 21.818 12 21.818z"/></svg>
+              WhatsApp Us
+            </a>
+          </div>
+        </FadeUp>
+      </div>
+    </section>
+  );
+}
+
+/* ═══════════════════════════════════════════════
+   CONTACT
+   ═══════════════════════════════════════════════ */
+function Contact() {
+  const [form, setForm] = useState({ name: "", phone: "", branch: "", message: "" });
+  const [sent, setSent] = useState(false);
+  const handle = (e) => setForm({ ...form, [e.target.name]: e.target.value });
+  const submit = (e) => { e.preventDefault(); setSent(true); };
+
+  const inputStyle = {
+    width: "100%", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)",
+    borderRadius: 4, padding: "13px 16px", color: "white", fontSize: 14, outline: "none",
+    transition: "border-color 0.3s",
+  };
+
+  return (
+    <section id="contact" style={{ background: "#080808", padding: "120px 5vw" }}>
+      <div style={{ maxWidth: 1280, margin: "0 auto", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6vw", alignItems: "start" }}
+        className="grid-cols-1 md:grid-cols-2">
+
+        {/* Left */}
+        <FadeUp>
+          <RedLine className="mb-5" />
+          <p style={{ fontSize: 11, color: "var(--red)", letterSpacing: "0.25em", fontWeight: 700, marginBottom: 12 }}>GET IN TOUCH</p>
+          <h2 style={{ fontFamily: "var(--font-head)", fontSize: "clamp(2rem, 3.5vw, 3rem)", fontWeight: 900, color: "white", marginBottom: 24, lineHeight: 1.05 }}>
+            READY TO<br /><span style={{ color: "var(--red)" }}>BEGIN?</span>
+          </h2>
+          <p style={{ color: "rgba(255,255,255,0.5)", lineHeight: 1.8, fontSize: 14, marginBottom: 40 }}>
+            Book your free trial, ask us anything, or just come visit. 
+            Our team at every branch is ready to welcome you and show you what Xtreme9 is all about.
+          </p>
+          {[
+            { icon: "📍", title: "Port Blair", sub: "Housing Colony, Garacharama · Until 10:30 PM" },
+            { icon: "📍", title: "Thane (Mira Road)", sub: "Beverly Park, Kanakia Road · Until 10:00 PM" },
+            { icon: "📍", title: "Mumbai (Ghatkopar)", sub: "RJ College, Ghatkopar West · 24 Hours" },
+          ].map((b) => (
+            <div key={b.title} style={{ display: "flex", gap: 14, marginBottom: 20 }}>
+              <span style={{ fontSize: 18 }}>{b.icon}</span>
+              <div>
+                <div style={{ fontWeight: 700, color: "white", fontSize: 14 }}>{b.title}</div>
+                <div style={{ fontSize: 12, color: "rgba(255,255,255,0.4)", marginTop: 2 }}>{b.sub}</div>
+              </div>
+            </div>
+          ))}
+        </FadeUp>
+
+        {/* Right: form */}
+        <FadeUp delay={0.15}>
+          {sent ? (
+            <div style={{ textAlign: "center", padding: "60px 40px", background: "rgba(220,38,38,0.08)", border: "1px solid rgba(220,38,38,0.3)", borderRadius: 8 }}>
+              <div style={{ fontSize: 48, marginBottom: 16 }}>✅</div>
+              <h3 style={{ fontFamily: "var(--font-head)", fontSize: 24, color: "white", marginBottom: 12 }}>REQUEST RECEIVED</h3>
+              <p style={{ color: "rgba(255,255,255,0.55)", lineHeight: 1.7 }}>Our team will contact you within 24 hours to schedule your free trial session. Get ready to transform.</p>
+            </div>
+          ) : (
+            <form onSubmit={submit} style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 8, padding: "40px 36px" }}>
+              <div style={{ marginBottom: 20 }}>
+                <label style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", letterSpacing: "0.15em", display: "block", marginBottom: 8 }}>FULL NAME *</label>
+                <input name="name" required value={form.name} onChange={handle} placeholder="Your name" style={inputStyle}
+                  onFocus={e => e.target.style.borderColor = "rgba(220,38,38,0.5)"}
+                  onBlur={e => e.target.style.borderColor = "rgba(255,255,255,0.1)"} />
+              </div>
+              <div style={{ marginBottom: 20 }}>
+                <label style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", letterSpacing: "0.15em", display: "block", marginBottom: 8 }}>PHONE NUMBER *</label>
+                <input name="phone" required value={form.phone} onChange={handle} placeholder="+91 XXXXXXXXXX" style={inputStyle}
+                  onFocus={e => e.target.style.borderColor = "rgba(220,38,38,0.5)"}
+                  onBlur={e => e.target.style.borderColor = "rgba(255,255,255,0.1)"} />
+              </div>
+              <div style={{ marginBottom: 20 }}>
+                <label style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", letterSpacing: "0.15em", display: "block", marginBottom: 8 }}>PREFERRED BRANCH</label>
+                <select name="branch" value={form.branch} onChange={handle} style={{ ...inputStyle, appearance: "none" }}>
+                  <option value="" style={{ background: "#111" }}>Select branch</option>
+                  <option value="portblair" style={{ background: "#111" }}>Port Blair</option>
+                  <option value="thane" style={{ background: "#111" }}>Thane (Mira Road)</option>
+                  <option value="mumbai" style={{ background: "#111" }}>Mumbai (Ghatkopar)</option>
+                </select>
+              </div>
+              <div style={{ marginBottom: 28 }}>
+                <label style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", letterSpacing: "0.15em", display: "block", marginBottom: 8 }}>MESSAGE</label>
+                <textarea name="message" rows={4} value={form.message} onChange={handle} placeholder="Tell us your goals..." style={{ ...inputStyle, resize: "vertical" }}
+                  onFocus={e => e.target.style.borderColor = "rgba(220,38,38,0.5)"}
+                  onBlur={e => e.target.style.borderColor = "rgba(255,255,255,0.1)"} />
+              </div>
+              <GlowBtn variant="red" className="w-full">Book My Free Trial Session →</GlowBtn>
+            </form>
+          )}
+        </FadeUp>
+      </div>
+    </section>
+  );
+}
+
+/* ═══════════════════════════════════════════════
+   FOOTER
+   ═══════════════════════════════════════════════ */
+function Footer() {
+  return (
+    <footer style={{ background: "#020202", borderTop: "1px solid rgba(220,38,38,0.15)", padding: "80px 5vw 40px" }}>
+      <div style={{ maxWidth: 1280, margin: "0 auto" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", gap: "4vw", marginBottom: 64 }}
+          className="grid-cols-1 md:grid-cols-4">
+
+          {/* Brand */}
+          <div>
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 28, fontWeight: 900, color: "white", letterSpacing: "0.06em", fontFamily: "var(--font-head)" }}>
+                XTREME<span style={{ color: "var(--red)" }}>9</span>
+              </div>
+              <div style={{ fontSize: 9, color: "rgba(255,255,255,0.35)", letterSpacing: "0.2em" }}>HEALTH & FITNESS</div>
+            </div>
+            <p style={{ color: "rgba(255,255,255,0.35)", fontSize: 13, lineHeight: 1.8, maxWidth: 260 }}>
+              India's premier luxury fitness and combat sports destination. 
+              Three elite branches. Seventeen years of excellence.
+            </p>
+            <div style={{ display: "flex", gap: 12, marginTop: 20 }}>
+              {["instagram", "facebook", "youtube"].map(s => (
+                <a key={s} href="#" style={{ width: 36, height: 36, borderRadius: 6, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.3s", textDecoration: "none", fontSize: 14 }}
+                  onMouseEnter={e => { e.currentTarget.style.background = "rgba(220,38,38,0.15)"; e.currentTarget.style.borderColor = "rgba(220,38,38,0.3)"; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = "rgba(255,255,255,0.05)"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)"; }}>
+                  {s === "instagram" ? "📸" : s === "facebook" ? "📘" : "▶️"}
+                </a>
+              ))}
+            </div>
+          </div>
+
+          {/* Links */}
+          <div>
+            <div style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", letterSpacing: "0.2em", marginBottom: 20 }}>QUICK LINKS</div>
+            {["About", "Programs", "Branches", "Pricing", "Gallery", "Trainers", "FAQ", "Contact"].map(l => (
+              <a key={l} href={`#${l.toLowerCase()}`} style={{ display: "block", color: "rgba(255,255,255,0.45)", fontSize: 13, marginBottom: 10, textDecoration: "none", transition: "color 0.2s" }}
+                onMouseEnter={e => e.target.style.color = "var(--red)"}
+                onMouseLeave={e => e.target.style.color = "rgba(255,255,255,0.45)"}>{l}</a>
+            ))}
+          </div>
+
+          {/* Branches */}
+          <div>
+            <div style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", letterSpacing: "0.2em", marginBottom: 20 }}>BRANCHES</div>
+            {[
+              { name: "Port Blair", info: "Until 10:30 PM" },
+              { name: "Thane, Maharashtra", info: "Until 10:00 PM" },
+              { name: "Mumbai, Maharashtra", info: "Open 24 Hours" },
+            ].map(b => (
+              <div key={b.name} style={{ marginBottom: 16 }}>
+                <div style={{ color: "rgba(255,255,255,0.65)", fontSize: 13, fontWeight: 600 }}>{b.name}</div>
+                <div style={{ color: "var(--red)", fontSize: 11, marginTop: 2 }}>🕐 {b.info}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Ratings */}
+          <div>
+            <div style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", letterSpacing: "0.2em", marginBottom: 20 }}>OUR RATINGS</div>
+            {[
+              { branch: "Port Blair", rating: "4.9", reviews: "245" },
+              { branch: "Thane", rating: "4.8", reviews: "483" },
+              { branch: "Mumbai", rating: "4.9", reviews: "134" },
+            ].map(r => (
+              <div key={r.branch} style={{ marginBottom: 16 }}>
+                <div style={{ color: "rgba(255,255,255,0.55)", fontSize: 12, marginBottom: 4 }}>{r.branch}</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <StarRating filled={5} />
+                  <span style={{ color: "white", fontWeight: 800, fontSize: 12 }}>{r.rating}</span>
+                  <span style={{ color: "rgba(255,255,255,0.3)", fontSize: 11 }}>({r.reviews})</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Bottom bar */}
+        <div style={{ borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: 24, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+          <p style={{ color: "rgba(255,255,255,0.2)", fontSize: 12 }}>© 2026 Xtreme9 Health & Fitness. All rights reserved.</p>
+          <p style={{ color: "rgba(255,255,255,0.15)", fontSize: 11 }}>Est. 2009 · Port Blair · Thane · Mumbai</p>
+        </div>
+      </div>
+    </footer>
+  );
+}
+
+/* ═══════════════════════════════════════════════
+   ROOT APP
+   ═══════════════════════════════════════════════ */
+export default function App() {
+  return (
+    <>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800;900&family=Barlow:wght@400;500;600;700&display=swap');
+
+        :root {
+          --red: #dc2626;
+          --red-glow: rgba(220,38,38,0.4);
+          --bg: #050505;
+          --font-head: 'Barlow Condensed', sans-serif;
+          --font-body: 'Barlow', sans-serif;
+        }
+
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        html { scroll-behavior: smooth; }
+
+        body {
+          background: var(--bg);
+          color: white;
+          font-family: var(--font-body);
+          -webkit-font-smoothing: antialiased;
+          overflow-x: hidden;
+        }
+
+        img { display: block; }
+        a { text-decoration: none; }
+        button { font-family: var(--font-body); }
+
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.4; }
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: #050505; }
+        ::-webkit-scrollbar-thumb { background: var(--red); border-radius: 2px; }
+
+        /* Mobile responsive overrides */
+        @media (max-width: 768px) {
+          .grid-cols-1 { grid-template-columns: 1fr !important; }
+          .md\\:grid-cols-2 { grid-template-columns: 1fr !important; }
+          .md\\:grid-cols-4 { grid-template-columns: 1fr 1fr !important; }
+          .hidden { display: none !important; }
+          .md\\:flex { display: flex !important; }
+        }
+        @media (min-width: 769px) {
+          .hidden { display: block; }
+        }
+      `}</style>
+
+      <Nav />
+
+      <main>
+        <Hero />
+        <About />
+        <Programs />
+        <Branches />
+        <Pricing />
+        <Features />
+        <Gallery />
+        <Testimonials />
+        <Trainers />
+        <FAQ />
+        <FinalCTA />
+        <Contact />
+      </main>
+
+      <Footer />
+    </>
+  );
+}
